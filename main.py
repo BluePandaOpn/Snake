@@ -9,11 +9,23 @@ import json
 import os
 import math
 import re
+import sys
 import threading
 from datetime import datetime, timezone
 
 import requests
 #import lib.PyinstallGame.reviw as reviw
+
+def get_app_dir():
+    """Devuelve la carpeta base persistente del juego."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+def get_resource_path(relative_path):
+    """Resuelve rutas de recursos tanto en desarrollo como empaquetado."""
+    base_path = getattr(sys, "_MEIPASS", get_app_dir())
+    return os.path.join(base_path, relative_path)
 
 # --- CONFIGURACIÓN INICIAL ---
 pygame.init()
@@ -44,12 +56,13 @@ PROJECT_ID = "reviw-snake"
 APP_ID = "1:1864041655978:web:210a25c77f6efb6ef22ad3"
 GAME_WEB_URL = "https://reviw-snake.web.app"
 PLAYER_NAME = os.getenv("SNAKE_PLAYER_NAME", os.getenv("USERNAME", "Player"))
+APP_DIR = get_app_dir()
 
 # Inicialización de la Pantalla
 dis = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption('Snake Pro - Edición Minimalista')
 clock = pygame.time.Clock()
-icon = pygame.image.load('ico.ico') 
+icon = pygame.image.load(get_resource_path("ico.ico"))
 pygame.display.set_icon(icon)
 
 # Fuentes
@@ -59,7 +72,12 @@ font_gameover = pygame.font.SysFont("arial", 60, bold=True)
 font_btn = pygame.font.SysFont("arial", 30, bold=True)
 
 # --- SISTEMA DE DATOS (JSON) ---
-DATA_FILE = "snake_data.json"
+DATA_FILE = os.path.join(APP_DIR, "snake_data.json")
+
+def exit_game():
+    """Cierra pygame y termina el proceso de forma segura."""
+    pygame.quit()
+    sys.exit()
 
 def load_data():
     """Carga el récord desde un archivo JSON."""
@@ -216,8 +234,7 @@ def loading_animation():
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                quit()
+                exit_game()
 
 def draw_button(text, x, y, w, h, inactive_color, active_color, action=None):
     """Dibuja un botón interactivo y detecta clics."""
@@ -260,8 +277,7 @@ def options_menu():
         pygame.display.update()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                quit()
+                exit_game()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE: options = False
         
@@ -286,7 +302,7 @@ def main_menu():
         
         draw_button("JUGAR", WIDTH/2 - 100, 320, 200, 60, COLOR_BUTTON, COLOR_BUTTON_HOVER, gameLoop)
         draw_button("OPCIONES", WIDTH/2 - 100, 410, 200, 60, COLOR_BUTTON, COLOR_BUTTON_HOVER, options_menu)
-        draw_button("SALIR", WIDTH/2 - 100, 500, 200, 60, COLOR_BUTTON, COLOR_BUTTON_HOVER, quit)
+        draw_button("SALIR", WIDTH/2 - 100, 500, 200, 60, COLOR_BUTTON, COLOR_BUTTON_HOVER, exit_game)
 
         # Decoración inferior
         for i in range(10):
@@ -296,8 +312,7 @@ def main_menu():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                quit()
+                exit_game()
 
 def gameLoop():
     """Bucle principal del juego con velocidad dinámica."""
@@ -328,13 +343,11 @@ def gameLoop():
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    quit()
+                    exit_game()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                quit()
+                exit_game()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_LEFT and x1_change == 0:
                     x1_change, y1_change = -SNAKE_BLOCK, 0
