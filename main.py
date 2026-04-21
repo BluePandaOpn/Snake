@@ -49,6 +49,8 @@ PLAYER_NAME = os.getenv("SNAKE_PLAYER_NAME", os.getenv("USERNAME", "Player"))
 dis = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption('Snake Pro - Edición Minimalista')
 clock = pygame.time.Clock()
+icon = pygame.image.load('ico.ico') 
+pygame.display.set_icon(icon)
 
 # Fuentes
 font_ui = pygame.font.SysFont("arial", 22, bold=True)
