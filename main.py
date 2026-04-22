@@ -132,6 +132,16 @@ def ensure_background_music():
         return True
     except: return False
 
+def set_game_icon():
+    """Carga el icono de la ventana del juego."""
+    icon_path = get_resource_path("ico.ico")
+    if not os.path.isfile(icon_path):
+        return
+    try:
+        pygame.display.set_icon(pygame.image.load(icon_path))
+    except pygame.error:
+        pass
+
 def preload_audio_async():
     """Pre-descarga los sonidos en un hilo separado para no bloquear el inicio."""
     threading.Thread(target=lambda: (ensure_audio_file("fondo.mp3"), ensure_audio_file("cambio_de_direcion.mp3")), daemon=True).start()
@@ -166,6 +176,7 @@ TIME_ATTACK_BONUS_MS = 4000
 
 dis = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption('Snake Pro - Ultimate Edition')
+set_game_icon()
 clock = pygame.time.Clock()
 
 font_ui = pygame.font.SysFont("arial", 22, bold=True)
