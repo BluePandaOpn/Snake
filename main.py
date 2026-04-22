@@ -12,8 +12,12 @@ import re
 import sys
 import threading
 from datetime import datetime, timezone
+from urllib import request as urllib_request
 
-import requests
+try:
+    import requests
+except ImportError:
+    requests = None
 #import lib.PyinstallGame.reviw as reviw
 
 def get_app_dir():
@@ -27,9 +31,66 @@ def get_resource_path(relative_path):
     base_path = getattr(sys, "_MEIPASS", get_app_dir())
     return os.path.join(base_path, relative_path)
 
+
+def ensure_directory(path):
+    """Crea una carpeta si no existe."""
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def file_exists_and_has_data(path):
+    """Comprueba que un archivo exista y no esté vacío."""
+    return os.path.isfile(path) and os.path.getsize(path) > 0
+
+
+def download_file(url, destination, timeout=5):
+    """Descarga un archivo sin romper el juego si la red falla."""
+    ensure_directory(os.path.dirname(destination))
+    try:
+        if requests is not None:
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+            with open(destination, "wb") as file_obj:
+                file_obj.write(response.content)
+            return True
+
+        with urllib_request.urlopen(url, timeout=timeout) as response, open(destination, "wb") as file_obj:
+            file_obj.write(response.read())
+        return True
+    except Exception:
+        return False
+
+
+def load_json_response(url, timeout=3, method="GET", payload=None):
+    """Realiza una petición JSON tolerante a ausencia de red o requests."""
+    try:
+        if requests is not None:
+            request_fn = requests.patch if method == "PATCH" else requests.get
+            response = request_fn(url, json=payload, timeout=timeout)
+            response.raise_for_status()
+            return True
+
+        data = json.dumps(payload).encode("utf-8") if payload is not None else None
+        req = urllib_request.Request(
+            url,
+            data=data,
+            method=method,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib_request.urlopen(req, timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+    return False
+
 # --- CONFIGURACIÓN INICIAL ---
 pygame.init()
-pygame.mixer.init()
+AUDIO_AVAILABLE = True
+try:
+    pygame.mixer.init()
+except pygame.error:
+    AUDIO_AVAILABLE = False
 
 # Paleta de Colores Solicitada
 COLOR_BG = (40, 40, 45)        # Gris oscuro
@@ -57,13 +118,116 @@ APP_ID = "1:1864041655978:web:210a25c77f6efb6ef22ad3"
 GAME_WEB_URL = "https://reviw-snake.web.app"
 PLAYER_NAME = os.getenv("SNAKE_PLAYER_NAME", os.getenv("USERNAME", "Player"))
 APP_DIR = get_app_dir()
+RES_DIR = ensure_directory(os.path.join(APP_DIR, "res"))
+AUDIO_CACHE = {}
+
+BACKGROUND_MUSIC_URL = "https://raw.githubusercontent.com/BluePandaOpn/Snake/main/res/fondo.mp3"
+DIRECTION_SOUND_URL = "https://raw.githubusercontent.com/BluePandaOpn/Snake/main/res/cambio_de_direcion.mp3"
+AUDIO_SOURCES = {
+    "fondo.mp3": BACKGROUND_MUSIC_URL,
+    "cambio_de_direcion.mp3": DIRECTION_SOUND_URL,
+}
+
+
+def resolve_runtime_resource(relative_path):
+    """Busca primero recursos persistentes y luego los empaquetados."""
+    candidate_paths = [
+        os.path.join(APP_DIR, relative_path),
+        get_resource_path(relative_path),
+        get_resource_path(os.path.join("assets", relative_path)),
+    ]
+    for path in candidate_paths:
+        if file_exists_and_has_data(path):
+            return path
+    return None
+
+
+def ensure_audio_file(filename):
+    """Devuelve la ruta usable del audio o None si no se pudo preparar."""
+    sound_path = resolve_runtime_resource(os.path.join("res", filename))
+    if sound_path:
+        return sound_path
+
+    cached_path = os.path.join(RES_DIR, filename)
+    if file_exists_and_has_data(cached_path):
+        return cached_path
+
+    url = AUDIO_SOURCES.get(filename)
+    if not url or not download_file(url, cached_path):
+        return None
+
+    return cached_path if file_exists_and_has_data(cached_path) else None
+
+
+def get_sound(sound_name):
+    """Carga y cachea efectos de sonido sin lanzar errores."""
+    if not AUDIO_AVAILABLE:
+        return None
+    if sound_name in AUDIO_CACHE:
+        return AUDIO_CACHE[sound_name]
+
+    sound_path = ensure_audio_file(sound_name)
+    if not sound_path:
+        AUDIO_CACHE[sound_name] = None
+        return None
+
+    try:
+        AUDIO_CACHE[sound_name] = pygame.mixer.Sound(sound_path)
+    except pygame.error:
+        AUDIO_CACHE[sound_name] = None
+    return AUDIO_CACHE[sound_name]
+
+
+def play_sound(sound_name):
+    """Reproduce un efecto si el audio está disponible."""
+    sound = get_sound(sound_name)
+    if sound is None:
+        return
+    try:
+        sound.play()
+    except pygame.error:
+        pass
+
+
+def ensure_background_music():
+    """Carga música de fondo local o desde GitHub con fallback silencioso."""
+    if not AUDIO_AVAILABLE:
+        return False
+
+    music_path = ensure_audio_file("fondo.mp3")
+    if not music_path:
+        return False
+
+    try:
+        if pygame.mixer.music.get_busy():
+            return True
+        pygame.mixer.music.load(music_path)
+        pygame.mixer.music.set_volume(0.45)
+        pygame.mixer.music.play(-1)
+        return True
+    except pygame.error:
+        return False
+
+
+def preload_audio_async():
+    """Intenta dejar el audio listo en segundo plano."""
+    def worker():
+        ensure_audio_file("fondo.mp3")
+        ensure_audio_file("cambio_de_direcion.mp3")
+
+    threading.Thread(target=worker, daemon=True).start()
 
 # Inicialización de la Pantalla
 dis = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption('Snake Pro - Edición Minimalista')
 clock = pygame.time.Clock()
-icon = pygame.image.load(get_resource_path("ico.ico"))
-pygame.display.set_icon(icon)
+icon_path = resolve_runtime_resource("ico.ico") or resolve_runtime_resource(os.path.join("assets", "ico.ico"))
+if icon_path:
+    try:
+        icon = pygame.image.load(icon_path)
+        pygame.display.set_icon(icon)
+    except pygame.error:
+        pass
 
 # Fuentes
 font_ui = pygame.font.SysFont("arial", 22, bold=True)
@@ -138,13 +302,8 @@ def upload_score_to_web(name, score):
         ("updateMask.fieldPaths", "appId"),
         ("updateMask.fieldPaths", "updatedAt"),
     ]
-
-    try:
-        response = requests.patch(url, params=params, json=payload, timeout=3)
-        response.raise_for_status()
-        return True
-    except requests.RequestException:
-        return False
+    query = "&".join(f"{key}={value}" for key, value in params)
+    return load_json_response(f"{url}?{query}", timeout=3, method="PATCH", payload=payload)
 
 
 def sync_score_async(score):
@@ -293,6 +452,7 @@ def set_speed(s):
 def main_menu():
     """Pantalla del Menú Principal con Botones."""
     menu = True
+    ensure_background_music()
     while menu:
         dis.fill(COLOR_BG)
         
@@ -351,12 +511,16 @@ def gameLoop():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_LEFT and x1_change == 0:
                     x1_change, y1_change = -SNAKE_BLOCK, 0
+                    play_sound("cambio_de_direcion.mp3")
                 elif event.key == pygame.K_RIGHT and x1_change == 0:
                     x1_change, y1_change = SNAKE_BLOCK, 0
+                    play_sound("cambio_de_direcion.mp3")
                 elif event.key == pygame.K_UP and y1_change == 0:
                     y1_change, x1_change = -SNAKE_BLOCK, 0
+                    play_sound("cambio_de_direcion.mp3")
                 elif event.key == pygame.K_DOWN and y1_change == 0:
                     y1_change, x1_change = SNAKE_BLOCK, 0
+                    play_sound("cambio_de_direcion.mp3")
 
         if x1 >= WIDTH or x1 < 0 or y1 >= HEIGHT or y1 < 50:
             game_close = True
@@ -403,4 +567,5 @@ def gameLoop():
         time.sleep(max(0, 1/dynamic_speed - 1/FPS))
 
 if __name__ == "__main__":
+    preload_audio_async()
     main_menu()
